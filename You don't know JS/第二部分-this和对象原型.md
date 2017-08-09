@@ -761,13 +761,14 @@ JS并不会像类那样自动创建对象的复本。
 
 
 
+
 ## 第五章 原型
 
 ### 5.1 [[Prototype]]
 
-JS中的对象有一个特殊的[[Prototype]]内置属性，其实是对于其他对象的引用。几乎所有的对象在创建时[[Prototype]]属性都会被赋予一个非空的值。
+JS中的对象有一个特殊的`[[Prototype]]`内置属性，其实是对于其他对象的引用。几乎所有的对象在创建时`[[Prototype]]`属性都会被赋予一个非空的值。
 
-在第3章中提到，当试图引用对象的属性时会触发[[Get]]操作，对于默认的[[Get]]操作来说，第一步是检查对象本身是否有这个属性，有的话使用它，没有的话就需要使用对象的[[Prototype]]链。
+在第3章中提到，当试图引用对象的属性时会触发`[[Get]]`操作，对于默认的`[[Get]]`操作来说，第一步是检查对象本身是否有这个属性，有的话使用它，没有的话就需要使用对象的`[[Prototype]]`链。
 
 ```
 var anotherObj = {
@@ -777,19 +778,19 @@ var obj = Object.create(anotherObj);
 obj.a; // 2
 ```
 
-Object.create()会创建一个对象并把这个对象的[[Prototype]]关联到指定的对象。
+`Object.create()`会创建一个对象并把这个对象的`[[Prototype]]`关联到指定的对象。
 
-[[Get]]操作会持续找到匹配的属性名或者查找完整条[[Prototype]]链返回undefined。
+`[[Get]]`操作会持续找到匹配的属性名或者查找完整条`[[Prototype]]`链返回undefined。
 
-使用for...in遍历对象时原理和查找[[Prototype]]链类似，任何可以通过原型链访问到（并且是enumerable）的属性都会被枚举。
+使用`for...in`遍历对象时原理和查找`[[Prototype]]`链类似，任何可以通过原型链访问到（并且是enumerable）的属性都会被枚举。
 
 使用in操作符来检查属性在对象中是否存在时，同样会查找对象的整条原型链（无论属性是否可枚举）。
 
 #### 5.1.1 Object.prototype
 
-到哪里是[[Prototype]]的尽头呢？
+到哪里是`[[Prototype]]`的尽头呢？
 
-所有普通的[[Prototype]]链最终都会指向内置的Obejct.prototype。
+所有普通的`[[Prototype]]`链最终都会指向内置的Obejct.prototype。
 
 ```
 对象原型链的终点：
@@ -797,4 +798,45 @@ Object.getPrototypeOf(Object.prototype); // null
 ```
 
 由于所有的普通对象都源于这个Object.prototype对象，它包含JS中很多通用功能，比如`.toString(), .valueOf(), hasOwnProperty(), isPrototypeOf()`。
+
+### 5.1.2 属性设置和屏蔽
+
+```
+myObj.foo = "bar";
+```
+
+如果myObj对象中包含名为foo的普通数据访问属性，这条赋值语句就会修改已有的属性值。
+
+如果foo不是直接存在于myObj中，`[[Prototype]]`链就会被遍历，类似`[[Get]]`操作。如果原型链上找不到foo，foo就会被直接添加到myObj上。
+
+如果foo存在于原型链上层，会出现三种情况：
+
+ 	1. 如果在`[[Prototype]]`链上层存在名为foo的普通数据访问属性，没有被标记为只读，也就是`(writable:true)`，就会直接在myObj中添加一个名为foo的新属性，它是**屏蔽属性**。
+ 	2. 如果在`[[Prototype]]`链上层存在foo，但是被标记为只读`(writable:false)`，那么无法修改已有属性或者在myObj上创建屏蔽属性。如果运行在严格模式下回报错，否则这条赋值语句会被忽略。总之不会发生屏蔽。
+ 	3. 如果在`[[Prototype]]`链上层存在foo并且它是一个setter，就一定会调用这个setter。foo不会被添加到myObj，也不会重新定义foo这个setter。
+ 	4. 如果希望在第二种和第三种情况下也屏蔽foo，就不能使用`=`操作符，而是使用`Object.defineProperty(..)`来想mObj添加foo。
+
+如果foo即出现在myObj中也出现在myObj的原型链上层，那么会发生屏蔽。myObj中包含的foo属性会屏蔽原型链上层的所有foo属性。
+
+
+
+有些情况下会产生隐式屏蔽：
+
+```
+var anotherObj = {a: 2};
+var myObj = Object.create(anotherObj);
+anotherObj.a; // 2
+myObj.a; // 2
+anotherObj.hasOwnProperty('a'); // true
+myObj.hasOwnProperty('a'); // false
+
+myObj.a++; // 隐式屏蔽！
+
+anotherObj.a; // 2
+myObj.a; // 3
+
+myObj.hasOwnProperty('a'); // true
+```
+
+尽管`myObj.a++`看起来是查找并增加`anotherObj.a`属性，但是`++`操作相当于`myObj.a = myObj.a + 1`，也就是先`[[Get]]`再`[[Put]]`。
 
