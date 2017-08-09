@@ -799,7 +799,7 @@ Object.getPrototypeOf(Object.prototype); // null
 
 由于所有的普通对象都源于这个Object.prototype对象，它包含JS中很多通用功能，比如`.toString(), .valueOf(), hasOwnProperty(), isPrototypeOf()`。
 
-### 5.1.2 属性设置和屏蔽
+#### 5.1.2 属性设置和屏蔽
 
 ```
 myObj.foo = "bar";
@@ -839,4 +839,139 @@ myObj.hasOwnProperty('a'); // true
 ```
 
 尽管`myObj.a++`看起来是查找并增加`anotherObj.a`属性，但是`++`操作相当于`myObj.a = myObj.a + 1`，也就是先`[[Get]]`再`[[Put]]`。
+
+### 5.2 "类"
+
+#### 5.2.1 类函数
+
+JS中所有**函数**(Foo)默认都拥有一个名为prototype的公有并且不可枚举的属性，它指向另一个对象，这个对象被称为Foo的原型。
+
+```
+function Foo(){}
+var a = new Foo();
+Object.getPrototypeOf(a) === Foo.prototype; // true
+```
+
+`new Foo()`会生成一个新对象，这个新对象内部`[[Prototype]]`关联的就是`Foo.prototype`对象。
+
+**自己测试了一下`Object.create()`和`new Object()`的区别：**
+
+* ```
+  var obj = {a: 1};
+
+  var newObj = Object.create(obj);
+  newObj.__proto__ === obj; // true
+
+  // 这里obj不是构造函数所以不能通过new的方式生成新对象
+  ```
+
+* ```
+  // 一定是函数才有prototype属性
+  var obj = function(){};
+
+  var newObj2 = Object.create(obj);
+  newObj2.__proto__ === obj; // true
+
+  var newObj = new obj();
+  newObj.__proto__ === obj.prototype; // true
+  ```
+
+* ```)
+  if(!Object.create){
+    Object.create = function(o){
+      function F(){};
+      F.prototype = o;
+      return new F();
+    }
+  }
+  ```
+
+
+
+创建类的实例的过程是复制行为，但是JS一直在模仿类的行为，却并没有类似的复制机制，而是通过`[[prototype]]`让对象之间关联。
+
+#### 5.2.2 构造函数
+
+```
+function Foo(){}
+Foo.prototype.constructor === Foo; // true
+
+var a = new Foo();
+a.constructor === Foo; // true
+a.__proto__.constructor === Foo; // true
+```
+
+`Foo.prototype`默认有一个公有并且不可枚举的属性`.constructor`，这个属性引用的是对象关联的函数Foo。
+
+**构造函数还是调用？**
+
+```
+function NothingSpecial(){
+  console.log('hello');
+}
+var a = new NothingSpecial(); // "hello"
+a; // {}
+```
+
+NothingSpecial只是一个普通函数，但是使用new调用是，它会构造一个对象并赋值给a，这是new的副作用（无论如何都会构造一个对象）。这个调用是一个构造函数调用。
+
+所以，函数不是构造函数，当且仅当使用new时，函数调用会变成“构造函数调用”。
+
+**`a.constructor`是一个非常不可靠并且不安全的引用，要尽量避免使用这些引用。**
+
+```
+function Foo(){};
+Foo.prototype = {}; // 创建一个新的原型对象
+// 需要在Foo.prototype上修复丢失的.constructor属性
+Object.defineProperty(Foo.prototype, "constructor", {
+  enumerable: false,
+  writable: true,
+  configurable: true,
+  value: Foo // 让.constructor指向Foo
+})
+```
+
+`.constructor`并不是一个不可变属性，他是不可枚举的，但是是可写的。你可以给任意`[[prototype]]`链中的仁义对象添加一个名为constructor的属性或者对其进行修改，你可以任意对其赋值。
+
+### 5.3 (原型)继承
+
+```
+function Foo(name){
+  this.name = name;
+}
+Foo.prototype.myName = function(){
+  return this.name;
+}
+function Bar(name){
+  Foo.call(this, name);
+}
+Bar.prototype = Object.create(Foo.prototype);
+var a = new Bar('a');
+a.myName(); // "a"
+```
+
+这段代码的核心就是`Bar.prototype = Object.create(Foo.prototype);`。调用`Object.create()`会创建一个新对象并新对象内部的`[[prototype]]`关联到你指定的对象`Foo.prototype`。
+
+**注意：下面这两种方式是常见的错误做法，因为它们都存在一些问题**
+
+* `Bar.prototype = Foo.prototype`
+
+  这个做法并不会创建一个关联到`Bar.prototype`新对象，它只是让`Bar.prototype`直接饮用`Foo.prototype`对象。因此当执行雷西`Bar.prototype.myName = ...`的赋值语句时会直接修改`Foo.prototype`对象本身。
+
+* `Bar.prototype = new Foo()`
+
+  这个做法的确会创建一个关联到`Bar.prototype`的新对象。但是它使用了Foo的构造函数调用，如果函数Foo有一些副作用（比如写日志、修改状态、注册到其他对象、给this添加数据属性等等）的话，就会影响到Bar的后代。
+
+因此，要创建一个合适的关联对象，必须使用`Object.create()`而不是使用具有副作用的`Foo()`。这样做唯一的缺点就是需要创建一个新对象a并把它关联到希望的对象上，然后把旧对象Bar抛弃掉，抛弃的对象需要进行垃圾回收。
+
+
+
+在ES6之前，只能通过设置`__proto__`属性来实现修改对象的`[[Prototype]]`关联，ES6添加了`Object.setPrototypeOf()`，可以用标准并可靠的方法来修改关联。
+
+```
+// ES6之前需要抛弃默认的Bar.prototype
+Bar.prototype = Object.create(Foo.prototype);
+// ES6开始可以直接修改现有的Bar.prototype
+Object.setPrototypeOf(Bar.prototype, Foo.prototype);
+```
 
