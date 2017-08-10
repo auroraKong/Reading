@@ -975,3 +975,104 @@ Bar.prototype = Object.create(Foo.prototype);
 Object.setPrototypeOf(Bar.prototype, Foo.prototype);
 ```
 
+**检查“类”关系**
+
+在传统面向类的观景中，检查一个实例（JS中国年的对象）的继承祖先（JS中的委托关联）通常被称为内省（或反射）。
+
+```
+function Foo(){}
+Foo.prototype.blah = ...;
+var a = new Foo();
+```
+
+* instanceof
+
+  ```
+  a instanceof Foo; // true
+  ```
+
+  instanceof操作符的左操作数是一个普通的对象，右操作数是一个函数。instanceof回答的问题是：在a的整条`[[prototype]]`链中是否有指向`Foo.prototype`的对象。
+
+  instanceof智能处理对象（a）和函数（带prototype引用的Foo）之间的关系，如果想判断两个对象（比如a和b）之间是否通过`[[Prototype]]`链关联，只用instanceof无法实现。
+
+* isPrototypeOf
+
+  ```
+  Foo.prototype.isPrototypeOf(a); // true
+  ```
+
+  isPrototypeOf回答的问题是：在a的整条`[[prototype]]`链中是否出现过`Foo.prototype`。
+
+  ```
+  b.isPrototypeOf(c); // b是否出现在c的[[prototype]]链中
+  ```
+
+* getPrototypeOf
+
+  ```
+  Object.getPrototypeOf(a) === Foo.prototype; // true
+  ```
+
+  通过getPrototypeOf可以直接获取一个对象的`Prototype`。
+
+* `__proto__`
+
+  绝大多数（不是所有）浏览器也支持一种非标准的方法来访问内部`[[Prototype]]`属性：
+
+  ```
+  a.__proto__ === Foo.prototype; // true
+  ```
+
+  `__proto__`的实现大致是：
+
+  ```
+  Object.defineProperty(Object.prototype, "__proto__", {
+    get: function(){
+      return Object.getPrototypeOf(this);
+    },
+    set: function(o){
+      Object.setPrototypeOf(this, o);
+      return o;
+    }
+  })
+  ```
+
+  访问`a.__proto__`时，实际上是调用了getter函数。虽然getter函数存在于`Object.prototype`对象中，但是它的this指向对象a，所以和`Object.getPrototypeOf(a)`结果相同。
+
+### 5.4 对象关联
+
+`[[Prototype]]`这个连接的作用是：如果在对象上没有找到需要的属性或方法引用，引擎就会继续在`[[Prototype]]`关联的对象上进行查找。
+
+`Object.create()`会创建一个新对象，并把它关联到指定的对象，这样就可以充分发挥`[[Prototype]]`机制的威力（委托）并且避免不必要的麻烦（比如使用new的构造函数调用会生成`.prototype`和`.constructor`引用）。
+
+`Object.create(null)`会创建一个拥有空（null）`[[Prototype]]`链接的对象，这个对象无法进行委托。由于这个对象没有原型链，所以instanceof操作符无法进行判断，总是会返回false。
+
+`Object.create()`的polyfill（抹平差异化：代码判断当前浏览器有无这个功能，没有写一些支持代码）代码：
+
+```
+if(!Object.create){
+  Object.create = function(o){
+    function F(){}
+    F.prototype = o;
+    return new F();
+  }
+}
+```
+
+这段polyfill代码使用了一个一次性函数F，通过改写它的prototype属性使其指向要关联的对象，然后再使用`new F()`来构造一个新对象进行关联。
+
+### 5.5 小结
+
+如果要访问对象中并不存在一个属性，`[[Get]]`操作就会查找对象内部`[[prototype]]`关联的对象。这个关联关系实际上定义了一条原型链（有点像嵌套作用域链），在查找属性时会对它进行遍历。
+
+所有普通对象都有内置的`Object.prototype`，指向原型链的顶端（比如全局作用域），如果在原型链中找不到指定的属性就会停止。toString、valueOf和其他一些通用的功能都存在于`Object.prototype`对象上，因此所有对象都可以使用它们。
+
+关联两个对象最常用的办法就是使用new关键词进行函数调用，在调用中会创建一个关联到其他对象的新对象。
+
+使用new调用函数时会把新对象的prototype属性关联到其他对象，带new 的函数调用通常被称为构造函数调用，尽管它们实际上和传统的面向类语言中的类构造函数不一样。
+
+虽然这些JS机制和传统面向类语言中的“类初始化”和“类继承 ”很相似，但是JS中的机制有一个核心区别，那就是不会复制，对象之间时通过内部的`[[prototype]]`链关联的。
+
+对象之间的关系不是复制而是委托。
+
+
